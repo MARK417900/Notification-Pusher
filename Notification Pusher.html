@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dispatch — scheduled notifications</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+
+    --board-bg: #EFEDE6;
+    --panel-bg: #FBFAF6;
+    --panel-bg-raised: #FFFFFF;
+    --ink: #1B2027;
+    --muted: #6B7280;
+    --accent: #C97400;
+    --accent-ink: #FFFFFF;
+    --line: #D8D4C9;
+    --success: #3F7D55;
+    --success-bg: #E4EFE7;
+    --danger: #B4472A;
+    --danger-bg: #F6E7E1;
+    --focus: #1B6FD4;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --board-bg: #14171C;
+      --panel-bg: #1B1F26;
+      --panel-bg-raised: #21262E;
+      --ink: #ECE9DF;
+      --muted: #8B93A0;
+      --accent: #F0A202;
+      --accent-ink: #14171C;
+      --line: #333941;
+      --success: #59B287;
+      --success-bg: #1E2C24;
+      --danger: #E2765A;
+      --danger-bg: #2E211D;
+      --focus: #6AA9F4;
+    }
+  }
+  :root[data-theme="dark"] {
+    --board-bg: #14171C;
+    --panel-bg: #1B1F26;
+    --panel-bg-raised: #21262E;
+    --ink: #ECE9DF;
+    --muted: #8B93A0;
+    --accent: #F0A202;
+    --accent-ink: #14171C;
+    --line: #333941;
+    --success: #59B287;
+    --success-bg: #1E2C24;
+    --danger: #E2765A;
+    --danger-bg: #2E211D;
+    --focus: #6AA9F4;
+  }
+
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html, body { height: 100%; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--board-bg);
+    color: var(--ink);
+    font-family: 'Space Grotesk', 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100%;
+  }
+
+  a, button, input, select { font-family: inherit; }
+
+  .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 28px 20px calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* ---- Masthead / clock ---- */
+  .masthead {
+    background: var(--panel-bg-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+  }
+  .masthead-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+  .brand {
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+  }
+  .brand .dot { color: var(--accent); }
+  .date {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .clock {
+    font-size: clamp(40px, 11vw, 64px);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    line-height: 1.05;
+    margin-top: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .clock .secs { color: var(--muted); font-size: 0.55em; }
+  .next-line {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .next-line strong { color: var(--ink); font-weight: 600; }
+
+  /* ---- Permission bar ---- */
+  .permbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--panel-bg-raised);
+    color: var(--ink);
+    padding: 10px 16px;
+    border-radius: 7px;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, transform 60ms ease;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn:active { transform: translateY(1px); }
+  .btn-accent {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+  }
+  .btn-accent:hover { filter: brightness(1.05); }
+  .btn-ghost {
+    background: transparent;
+  }
+  .btn-sm { padding: 6px 11px; font-size: 12.5px; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    color: var(--muted);
+    padding: 6px 10px 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+  }
+  .status-pill .led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    flex: none;
+  }
+  .status-pill.on .led { background: var(--success); }
+  .status-pill.off .led { background: var(--danger); }
+
+  /* ---- Board ---- */
+  .board {
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  .board-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 18px 12px;
+  }
+  .board-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .col-labels {
+    display: grid;
+    grid-template-columns: 64px 84px 1fr 78px 62px;
+    gap: 10px;
+    padding: 0 18px 8px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 64px 84px 1fr 78px 62px;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 18px;
+    border-top: 1px solid var(--line);
+  }
+  .row .time {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .row .repeat {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .row .msg-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .row .msg-body {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .badge {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 4px 8px;
+    border-radius: 4px;
+    justify-self: start;
+    white-space: nowrap;
+  }
+  .badge.armed { background: var(--success-bg); color: var(--success); }
+  .badge.sent { background: var(--line); color: var(--muted); }
+  .badge.off { background: var(--danger-bg); color: var(--danger); }
+  .row-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+  .icon-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .icon-btn:hover { color: var(--ink); border-color: var(--muted); }
+  .icon-btn.danger-confirm { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+
+  .empty {
+    padding: 30px 18px 34px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+
+  .board-foot {
+    padding: 14px 18px 18px;
+    border-top: 1px solid var(--line);
+  }
+
+  /* ---- Add / edit form ---- */
+  .form-row {
+    padding: 16px 18px 18px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-bg-raised);
+  }
+  .field-grid {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 10px 14px;
+  }
+  .field-label {
+    font-size: 12px;
+    color: var(--muted);
+    padding-top: 9px;
+  }
+  input[type="time"], input[type="text"], select {
+    width: 100%;
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .day-toggles {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .day-toggle {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--panel-bg);
+    color: var(--muted);
+    width: 34px; height: 30px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .day-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+  .form-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+
+  /* ---- History ---- */
+  .history {
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px 18px;
+  }
+  .history-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .history-row {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    padding: 7px 0;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .history-row:first-child { border-top: none; }
+  .history-time { color: var(--accent); font-weight: 600; flex: none; width: 52px; }
+  .history-text { color: var(--ink); }
+  .history-when { color: var(--muted); margin-left: auto; font-size: 12px; flex: none; }
+
+  .note {
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 18px;
+  }
+
+  @media (max-width: 520px) {
+    .col-labels { display: none; }
+    .row {
+      grid-template-columns: 1fr;
+      gap: 6px;
+      position: relative;
+    }
+    .row .time { font-size: 18px; }
+    .row-actions { position: absolute; top: 12px; right: 18px; }
+    .badge { margin-top: 2px; }
+    .field-grid { grid-template-columns: 1fr; }
+    .field-label { padding-top: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="masthead-top">
+      <div class="brand"><span class="dot">●</span> DISPATCH</div>
+      <div class="date mono" id="dateLine">—</div>
+    </div>
+    <div class="clock mono" id="clockLine">--:--<span class="secs">:--</span></div>
+    <div class="next-line" id="nextLine">No dispatches scheduled yet.</div>
+  </div>
+
+  <div class="permbar">
+    <button class="btn btn-accent" id="enableBtn">Enable notifications</button>
+    <button class="btn btn-ghost" id="testBtn">Send test now</button>
+    <span class="status-pill" id="permPill"><span class="led"></span><span id="permText">Checking…</span></span>
+  </div>
+
+  <p class="note" id="supportNote">Dispatch delivers browser notifications while this tab is open — pin it or keep it running in the background so nothing gets missed. Nothing you enter here leaves your browser.</p>
+
+  <div class="board">
+    <div class="board-head">
+      <div class="board-title">SCHEDULED</div>
+    </div>
+    <div class="col-labels">
+      <div>TIME</div><div>REPEAT</div><div>MESSAGE</div><div>STATUS</div><div></div>
+    </div>
+    <div id="rows"></div>
+    <div class="empty" id="emptyState" hidden>No dispatches yet. Add your first one below — a daily weather check, a standup reminder, anything on a schedule.</div>
+
+    <div class="board-foot" id="addFootRow">
+      <button class="btn" id="addBtn">+ Add dispatch</button>
+    </div>
+
+    <div class="form-row" id="formRow" hidden>
+      <div class="field-grid">
+        <div class="field-label">Time</div>
+        <div><input type="time" id="f_time"></div>
+
+        <div class="field-label">Repeat</div>
+        <div>
+          <select id="f_repeat">
+            <option value="once">Once</option>
+            <option value="daily" selected>Daily</option>
+            <option value="weekdays">Weekdays</option>
+            <option value="weekends">Weekends</option>
+            <option value="custom">Custom days</option>
+          </select>
+        </div>
+
+        <div class="field-label" id="f_days_label" hidden>Days</div>
+        <div id="f_days" hidden>
+          <div class="day-toggles">
+            <button type="button" class="day-toggle" data-day="0">S</button>
+            <button type="button" class="day-toggle" data-day="1">M</button>
+            <button type="button" class="day-toggle" data-day="2">T</button>
+            <button type="button" class="day-toggle" data-day="3">W</button>
+            <button type="button" class="day-toggle" data-day="4">T</button>
+            <button type="button" class="day-toggle" data-day="5">F</button>
+            <button type="button" class="day-toggle" data-day="6">S</button>
+          </div>
+        </div>
+
+        <div class="field-label">Title</div>
+        <div><input type="text" id="f_title" placeholder="Morning weather check" maxlength="60"></div>
+
+        <div class="field-label">Details</div>
+        <div><input type="text" id="f_body" placeholder="Optional — shown inside the notification" maxlength="140"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+        <button class="btn btn-accent" id="saveBtn">Save dispatch</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="history">
+    <div class="history-title">RECENT DELIVERIES</div>
+    <div id="historyRows"><div class="empty" style="padding:6px 0;">Nothing delivered yet.</div></div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LS_ITEMS = "dispatch:items";
+  var LS_HISTORY = "dispatch:history";
+  var DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  var REPEAT_LABEL = { once: "Once", daily: "Daily", weekdays: "Weekdays", weekends: "Weekends", custom: "Custom" };
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function todayKey(d) { d = d || new Date(); return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function safeLoad(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return fallback;
+      var parsed = JSON.parse(raw);
+      return parsed == null ? fallback : parsed;
+    } catch (e) { return fallback; }
+  }
+  function safeSave(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage unavailable — state stays in memory */ }
+  }
+
+  var state = {
+    items: safeLoad(LS_ITEMS, []),
+    history: safeLoad(LS_HISTORY, []),
+    editingId: null
+  };
+
+  // ---------- elements ----------
+  var el = {
+    clockLine: document.getElementById("clockLine"),
+    dateLine: document.getElementById("dateLine"),
+    nextLine: document.getElementById("nextLine"),
+    enableBtn: document.getElementById("enableBtn"),
+    testBtn: document.getElementById("testBtn"),
+    permPill: document.getElementById("permPill"),
+    permText: document.getElementById("permText"),
+    supportNote: document.getElementById("supportNote"),
+    rows: document.getElementById("rows"),
+    emptyState: document.getElementById("emptyState"),
+    addBtn: document.getElementById("addBtn"),
+    addFootRow: document.getElementById("addFootRow"),
+    formRow: document.getElementById("formRow"),
+    f_time: document.getElementById("f_time"),
+    f_repeat: document.getElementById("f_repeat"),
+    f_days_label: document.getElementById("f_days_label"),
+    f_days: document.getElementById("f_days"),
+    f_title: document.getElementById("f_title"),
+    f_body: document.getElementById("f_body"),
+    saveBtn: document.getElementById("saveBtn"),
+    cancelBtn: document.getElementById("cancelBtn"),
+    historyRows: document.getElementById("historyRows")
+  };
+
+  var customDays = [];
+
+  // ---------- notification support / permission ----------
+  var hasNotify = typeof window !== "undefined" && "Notification" in window;
+
+  function refreshPermUI() {
+    if (!hasNotify) {
+      el.permPill.className = "status-pill off";
+      el.permText.textContent = "Not supported in this browser";
+      el.enableBtn.disabled = true;
+      el.testBtn.disabled = true;
+      el.supportNote.textContent = "This browser doesn't support notifications, so Dispatch can't deliver here. Try Chrome, Edge, or Firefox on desktop.";
+      return;
+    }
+    var perm = Notification.permission;
+    if (perm === "granted") {
+      el.permPill.className = "status-pill on";
+      el.permText.textContent = "Notifications on";
+      el.enableBtn.textContent = "Notifications enabled";
+      el.enableBtn.disabled = true;
+      el.testBtn.disabled = false;
+    } else if (perm === "denied") {
+      el.permPill.className = "status-pill off";
+      el.permText.textContent = "Blocked — allow in browser settings";
+      el.enableBtn.disabled = true;
+      el.testBtn.disabled = true;
+    } else {
+      el.permPill.className = "status-pill off";
+      el.permText.textContent = "Notifications off";
+      el.enableBtn.disabled = false;
+      el.enableBtn.textContent = "Enable notifications";
+      el.testBtn.disabled = true;
+    }
+  }
+
+  el.enableBtn.addEventListener("click", function () {
+    if (!hasNotify) return;
+    Notification.requestPermission().then(function () { refreshPermUI(); });
+  });
+
+  el.testBtn.addEventListener("click", function () {
+    fireNotification("Dispatch test", "This is what a dispatch looks like.");
+  });
+
+  function fireNotification(title, body) {
+    if (!hasNotify || Notification.permission !== "granted") return;
+    try {
+      new Notification(title, { body: body || "" });
+    } catch (e) { /* some browsers require a service worker for background tabs — ignore */ }
+    logHistory(title, body);
+  }
+
+  function logHistory(title, body) {
+    state.history.unshift({ id: uid(), title: title, body: body || "", at: Date.now() });
+    state.history = state.history.slice(0, 20);
+    safeSave(LS_HISTORY, state.history);
+    renderHistory();
+  }
+
+  // ---------- clock ----------
+  function tickClock() {
+    var now = new Date();
+    var h = pad(now.getHours()), m = pad(now.getMinutes()), s = pad(now.getSeconds());
+    el.clockLine.innerHTML = h + ":" + m + '<span class="secs">:' + s + "</span>";
+    el.dateLine.textContent = now.toDateString();
+    updateNextLine(now);
+    checkDue(now);
+  }
+
+  // ---------- schedule matching ----------
+  function itemAppliesToday(item, dayIdx) {
+    if (item.repeat === "once") return true;
+    if (item.repeat === "daily") return true;
+    if (item.repeat === "weekdays") return dayIdx >= 1 && dayIdx <= 5;
+    if (item.repeat === "weekends") return dayIdx === 0 || dayIdx === 6;
+    if (item.repeat === "custom") return (item.days || []).indexOf(dayIdx) !== -1;
+    return false;
+  }
+
+  function nextOccurrence(item, from) {
+    // returns a Date for the next time this item should fire, or null if it never will again
+    var base = from || new Date();
+    for (var addDays = 0; addDays < 8; addDays++) {
+      var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + addDays);
+      var dayIdx = d.getDay();
+      if (!itemAppliesToday(item, dayIdx)) continue;
+      var parts = (item.time || "00:00").split(":");
+      d.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 0, 0);
+      if (item.repeat === "once" && item.firedOnce) return null;
+      if (addDays === 0 && d.getTime() <= base.getTime()) continue; // already past today
+      return d;
+    }
+    return null;
+  }
+
+  function updateNextLine(now) {
+    var enabled = state.items.filter(function (i) { return i.enabled !== false && !(i.repeat === "once" && i.firedOnce); });
+    if (!enabled.length) {
+      el.nextLine.textContent = "No dispatches scheduled yet.";
+      return;
+    }
+    var best = null, bestItem = null;
+    enabled.forEach(function (item) {
+      var n = nextOccurrence(item, now);
+      if (n && (!best || n.getTime() < best.getTime())) { best = n; bestItem = item; }
+    });
+    if (!best) { el.nextLine.textContent = "No upcoming dispatches."; return; }
+    var diff = Math.max(0, best.getTime() - now.getTime());
+    var hh = Math.floor(diff / 3600000);
+    var mm = Math.floor((diff % 3600000) / 60000);
+    var ss = Math.floor((diff % 60000) / 1000);
+    var countdown = (hh > 0 ? hh + "h " : "") + mm + "m " + ss + "s";
+    el.nextLine.innerHTML = "Next: <strong>" + escapeHtml(bestItem.title) + "</strong> in " + countdown;
+  }
+
+  function checkDue(now) {
+    var hhmm = pad(now.getHours()) + ":" + pad(now.getMinutes());
+    var dayIdx = now.getDay();
+    var tKey = todayKey(now);
+    var changed = false;
+    state.items.forEach(function (item) {
+      if (item.enabled === false) return;
+      if (item.repeat === "once" && item.firedOnce) return;
+      if (item.time !== hhmm) return;
+      if (!itemAppliesToday(item, dayIdx)) return;
+      if (item.lastFiredKey === tKey) return; // already fired today
+      fireNotification(item.title, item.body);
+      item.lastFiredKey = tKey;
+      if (item.repeat === "once") item.firedOnce = true;
+      changed = true;
+    });
+    if (changed) { safeSave(LS_ITEMS, state.items); renderRows(); }
+  }
+
+  // ---------- rendering ----------
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function statusFor(item) {
+    var tKey = todayKey();
+    if (item.enabled === false) return { cls: "off", label: "OFF" };
+    if (item.repeat === "once" && item.firedOnce) return { cls: "sent", label: "SENT" };
+    if (item.lastFiredKey === tKey) return { cls: "sent", label: "SENT" };
+    return { cls: "armed", label: "ARMED" };
+  }
+
+  function renderRows() {
+    el.rows.innerHTML = "";
+    if (!state.items.length) {
+      el.emptyState.hidden = false;
+      return;
+    }
+    el.emptyState.hidden = true;
+    var sorted = state.items.slice().sort(function (a, b) { return a.time < b.time ? -1 : 1; });
+    sorted.forEach(function (item) {
+      var st = statusFor(item);
+      var row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML =
+        '<div class="time mono">' + escapeHtml(item.time) + '</div>' +
+        '<div class="repeat">' + repeatText(item) + '</div>' +
+        '<div><div class="msg-title">' + escapeHtml(item.title) + '</div>' +
+        (item.body ? '<div class="msg-body">' + escapeHtml(item.body) + '</div>' : '') + '</div>' +
+        '<div class="badge ' + st.cls + '">' + st.label + '</div>' +
+        '<div class="row-actions">' +
+          '<button class="icon-btn" data-edit="' + item.id + '" aria-label="Edit dispatch" title="Edit">✎</button>' +
+          '<button class="icon-btn" data-del="' + item.id + '" aria-label="Remove dispatch" title="Remove">✕</button>' +
+        '</div>';
+      el.rows.appendChild(row);
+    });
+  }
+
+  function repeatText(item) {
+    if (item.repeat === "custom") {
+      var names = (item.days || []).slice().sort().map(function (d) { return DAY_NAMES[d]; });
+      return names.length ? names.join(" ") : "Custom";
+    }
+    return REPEAT_LABEL[item.repeat] || item.repeat;
+  }
+
+  function renderHistory() {
+    if (!state.history.length) {
+      el.historyRows.innerHTML = '<div class="empty" style="padding:6px 0;">Nothing delivered yet.</div>';
+      return;
+    }
+    el.historyRows.innerHTML = state.history.map(function (h) {
+      var d = new Date(h.at);
+      var t = pad(d.getHours()) + ":" + pad(d.getMinutes());
+      return '<div class="history-row">' +
+        '<div class="history-time mono">' + t + '</div>' +
+        '<div class="history-text">' + escapeHtml(h.title) + '</div>' +
+        '<div class="history-when">' + relativeTime(h.at) + '</div>' +
+        '</div>';
+    }).join("");
+  }
+
+  function relativeTime(ts) {
+    var diff = Date.now() - ts;
+    var mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return mins + "m ago";
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + "h ago";
+    return Math.floor(hrs / 24) + "d ago";
+  }
+
+  // ---------- row actions ----------
+  el.rows.addEventListener("click", function (e) {
+    var editId = e.target.getAttribute("data-edit");
+    var delId = e.target.getAttribute("data-del");
+    if (editId) { openForm(editId); }
+    if (delId) {
+      if (e.target.classList.contains("danger-confirm")) {
+        state.items = state.items.filter(function (i) { return i.id !== delId; });
+        safeSave(LS_ITEMS, state.items);
+        renderRows();
+      } else {
+        e.target.classList.add("danger-confirm");
+        e.target.textContent = "✓";
+        e.target.title = "Click to confirm removal";
+        setTimeout(function () {
+          e.target.classList.remove("danger-confirm");
+          e.target.textContent = "✕";
+          e.target.title = "Remove";
+        }, 3000);
+      }
+    }
+  });
+
+  // ---------- form ----------
+  function resetForm() {
+    el.f_time.value = "09:00";
+    el.f_repeat.value = "daily";
+    el.f_title.value = "";
+    el.f_body.value = "";
+    customDays = [];
+    updateDayToggles();
+    toggleCustomDaysVisibility();
+  }
+
+  function toggleCustomDaysVisibility() {
+    var show = el.f_repeat.value === "custom";
+    el.f_days.hidden = !show;
+    el.f_days_label.hidden = !show;
+  }
+  el.f_repeat.addEventListener("change", toggleCustomDaysVisibility);
+
+  function updateDayToggles() {
+    Array.prototype.forEach.call(el.f_days.querySelectorAll(".day-toggle"), function (btn) {
+      var d = parseInt(btn.getAttribute("data-day"), 10);
+      btn.classList.toggle("active", customDays.indexOf(d) !== -1);
+    });
+  }
+  el.f_days.addEventListener("click", function (e) {
+    if (!e.target.classList.contains("day-toggle")) return;
+    var d = parseInt(e.target.getAttribute("data-day"), 10);
+    var idx = customDays.indexOf(d);
+    if (idx === -1) customDays.push(d); else customDays.splice(idx, 1);
+    updateDayToggles();
+  });
+
+  function openForm(editId) {
+    state.editingId = editId || null;
+    resetForm();
+    if (editId) {
+      var item = state.items.find(function (i) { return i.id === editId; });
+      if (item) {
+        el.f_time.value = item.time;
+        el.f_repeat.value = item.repeat;
+        el.f_title.value = item.title;
+        el.f_body.value = item.body || "";
+        customDays = (item.days || []).slice();
+        updateDayToggles();
+        toggleCustomDaysVisibility();
+      }
+    }
+    el.formRow.hidden = false;
+    el.addFootRow.hidden = true;
+    el.f_title.focus();
+  }
+  function closeForm() {
+    state.editingId = null;
+    el.formRow.hidden = true;
+    el.addFootRow.hidden = false;
+  }
+
+  el.addBtn.addEventListener("click", function () { openForm(null); });
+  el.cancelBtn.addEventListener("click", closeForm);
+
+  el.saveBtn.addEventListener("click", function () {
+    var title = el.f_title.value.trim();
+    if (!title) { el.f_title.focus(); return; }
+    var repeat = el.f_repeat.value;
+    var payload = {
+      id: state.editingId || uid(),
+      time: el.f_time.value || "09:00",
+      repeat: repeat,
+      days: repeat === "custom" ? customDays.slice() : [],
+      title: title,
+      body: el.f_body.value.trim(),
+      enabled: true,
+      lastFiredKey: null,
+      firedOnce: false
+    };
+    if (state.editingId) {
+      var idx = state.items.findIndex(function (i) { return i.id === state.editingId; });
+      if (idx !== -1) {
+        payload.lastFiredKey = state.items[idx].lastFiredKey || null;
+        payload.firedOnce = state.items[idx].firedOnce || false;
+        state.items[idx] = payload;
+      }
+    } else {
+      state.items.push(payload);
+    }
+    safeSave(LS_ITEMS, state.items);
+    renderRows();
+    closeForm();
+  });
+
+  // ---------- init ----------
+  refreshPermUI();
+  renderRows();
+  renderHistory();
+  tickClock();
+  setInterval(tickClock, 1000);
+})();
+</script>
+</body>
+</html>
