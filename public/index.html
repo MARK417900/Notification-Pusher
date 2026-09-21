@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dispatch — push notifications</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --board-bg: #EFEDE6; --panel-bg: #FBFAF6; --panel-bg-raised: #FFFFFF;
+    --ink: #1B2027; --muted: #6B7280; --accent: #C97400; --accent-ink: #FFFFFF;
+    --line: #D8D4C9; --success: #3F7D55; --success-bg: #E4EFE7;
+    --danger: #B4472A; --danger-bg: #F6E7E1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --board-bg: #14171C; --panel-bg: #1B1F26; --panel-bg-raised: #21262E;
+      --ink: #ECE9DF; --muted: #8B93A0; --accent: #F0A202; --accent-ink: #14171C;
+      --line: #333941; --success: #59B287; --success-bg: #1E2C24;
+      --danger: #E2765A; --danger-bg: #2E211D; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--board-bg); color:var(--ink); font-family:'Space Grotesk',sans-serif; min-height:100vh; }
+  .mono { font-family:'IBM Plex Mono', ui-monospace, monospace; }
+  .wrap { max-width:720px; margin:0 auto; padding:28px 20px 60px; }
+  .masthead { background:var(--panel-bg-raised); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin-bottom:16px; }
+  .brand { font-weight:700; font-size:15px; }
+  .brand .dot { color:var(--accent); }
+  .clock { font-size:clamp(34px,9vw,52px); font-weight:600; color:var(--accent); margin-top:4px; }
+  .btn { appearance:none; border:1px solid var(--line); background:var(--panel-bg-raised); color:var(--ink);
+    padding:10px 16px; border-radius:7px; font-family:inherit; font-weight:600; font-size:13.5px; cursor:pointer; }
+  .btn-accent { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .pill { font-size:12.5px; color:var(--muted); padding:6px 10px; border:1px solid var(--line); border-radius:20px; }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.5; margin-bottom:16px; }
+  .board { background:var(--panel-bg); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:16px; }
+  .row { display:grid; grid-template-columns:64px 84px 1fr 78px 62px; gap:10px; align-items:center; padding:12px 16px; border-top:1px solid var(--line); }
+  .row:first-child { border-top:none; }
+  .time { font-size:16px; font-weight:600; }
+  .repeat { font-size:12px; color:var(--muted); }
+  .msg-title { font-size:14px; font-weight:500; }
+  .msg-body { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .badge { font-size:10.5px; font-weight:600; padding:4px 8px; border-radius:4px; }
+  .badge.armed { background:var(--success-bg); color:var(--success); }
+  .badge.sent { background:var(--line); color:var(--muted); }
+  .row-actions { display:flex; gap:6px; justify-content:flex-end; }
+  .icon-btn { border:1px solid var(--line); background:transparent; color:var(--muted); width:28px; height:28px; border-radius:6px; cursor:pointer; }
+  .foot { padding:14px 16px; border-top:1px solid var(--line); }
+  .form-row { padding:16px; border-top:1px solid var(--line); background:var(--panel-bg-raised); }
+  .field-grid { display:grid; grid-template-columns:100px 1fr; gap:10px 14px; }
+  input, select { width:100%; background:var(--panel-bg); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:8px 10px; font-size:14px; font-family:inherit; }
+  .day-toggles { display:flex; gap:6px; flex-wrap:wrap; }
+  .day-toggle { border:1px solid var(--line); background:var(--panel-bg); color:var(--muted); width:32px; height:30px; border-radius:6px; cursor:pointer; }
+  .day-toggle.active { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .form-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+  .history-row { display:flex; gap:12px; padding:7px 0; border-top:1px solid var(--line); font-size:13px; }
+  .history-row:first-child { border-top:none; }
+  .gate { position:fixed; inset:0; background:var(--board-bg); display:flex; align-items:center; justify-content:center; padding:20px; z-index:10; }
+  .gate-box { background:var(--panel-bg-raised); border:1px solid var(--line); border-radius:10px; padding:24px; max-width:340px; width:100%; }
+  @media (max-width:520px) { .row { grid-template-columns:1fr; position:relative; } .row-actions { position:absolute; top:12px; right:16px; } .field-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gate-box">
+    <div class="brand" style="margin-bottom:10px;"><span class="dot">●</span> DISPATCH</div>
+    <p class="note" style="margin-bottom:12px;">Enter the access code you set as ACCESS_CODE on your server (leave blank if you didn't set one).</p>
+    <input type="password" id="gateInput" placeholder="Access code" style="margin-bottom:10px;">
+    <button class="btn btn-accent" id="gateSubmit" style="width:100%;">Continue</button>
+    <div class="note" id="gateError" style="color:var(--danger); display:none; margin-top:8px;">Wrong code — try again.</div>
+  </div>
+</div>
+
+<div class="wrap" id="app" style="display:none;">
+  <div class="masthead">
+    <div class="brand"><span class="dot">●</span> DISPATCH <span style="color:var(--muted); font-weight:400;">· push</span></div>
+    <div class="clock mono" id="clockLine">--:--:--</div>
+  </div>
+
+  <div class="bar">
+    <button class="btn btn-accent" id="subscribeBtn">Enable push notifications</button>
+    <button class="btn" id="testBtn">Send test push</button>
+    <span class="pill" id="statusPill">Checking…</span>
+  </div>
+  <p class="note">These are real push notifications sent from your own server — they'll arrive even if this tab and browser are fully closed, as long as the device has an internet connection and the browser was granted permission at least once.</p>
+
+  <div class="board">
+    <div id="rows"></div>
+    <div class="foot" id="addFoot"><button class="btn" id="addBtn">+ Add dispatch</button></div>
+    <div class="form-row" id="formRow" hidden>
+      <div class="field-grid">
+        <div>Time</div><div><input type="time" id="f_time"></div>
+        <div>Repeat</div><div>
+          <select id="f_repeat">
+            <option value="once">Once</option>
+            <option value="daily" selected>Daily</option>
+            <option value="weekdays">Weekdays</option>
+            <option value="weekends">Weekends</option>
+            <option value="custom">Custom days</option>
+          </select>
+        </div>
+        <div id="f_days_label" hidden>Days</div>
+        <div id="f_days" hidden>
+          <div class="day-toggles">
+            <button type="button" class="day-toggle" data-day="0">S</button>
+            <button type="button" class="day-toggle" data-day="1">M</button>
+            <button type="button" class="day-toggle" data-day="2">T</button>
+            <button type="button" class="day-toggle" data-day="3">W</button>
+            <button type="button" class="day-toggle" data-day="4">T</button>
+            <button type="button" class="day-toggle" data-day="5">F</button>
+            <button type="button" class="day-toggle" data-day="6">S</button>
+          </div>
+        </div>
+        <div>Title</div><div><input type="text" id="f_title" placeholder="Morning weather check" maxlength="60"></div>
+        <div>Details</div><div><input type="text" id="f_body" placeholder="Optional" maxlength="140"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="cancelBtn">Cancel</button>
+        <button class="btn btn-accent" id="saveBtn">Save dispatch</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div style="padding:14px 16px 4px; font-size:12.5px; font-weight:600; color:var(--muted);">RECENT DELIVERIES</div>
+    <div id="historyRows" style="padding:0 16px 14px;"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var accessCode = localStorage.getItem("dispatch:code") || "";
+  var DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  var REPEAT_LABEL = { once:"Once", daily:"Daily", weekdays:"Weekdays", weekends:"Weekends", custom:"Custom" };
+  var customDays = [];
+  var editingId = null;
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ "Content-Type": "application/json", "x-access-code": accessCode }, opts.headers || {});
+    return fetch(path, opts).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  document.getElementById("gateSubmit").addEventListener("click", function () {
+    accessCode = document.getElementById("gateInput").value;
+    api("/api/access-check").then(function () {
+      localStorage.setItem("dispatch:code", accessCode);
+      document.getElementById("gate").style.display = "none";
+      document.getElementById("app").style.display = "block";
+      init();
+    }).catch(function () {
+      document.getElementById("gateError").style.display = "block";
+    });
+  });
+
+  // try stored code first
+  api("/api/access-check").then(function () {
+    document.getElementById("gate").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    init();
+  }).catch(function () { /* show gate, already visible */ });
+
+  function init() {
+    tickClock();
+    setInterval(tickClock, 1000);
+    setupPush();
+    loadItems();
+    loadHistory();
+    wireForm();
+  }
+
+  function tickClock() {
+    var d = new Date();
+    document.getElementById("clockLine").textContent =
+      String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0") + ":" + String(d.getSeconds()).padStart(2,"0");
+  }
+
+  // ---------- push subscription ----------
+  function urlBase64ToUint8Array(base64String) {
+    var padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var rawData = atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
+  var pill = document.getElementById("statusPill");
+  var subBtn = document.getElementById("subscribeBtn");
+  var testBtn = document.getElementById("testBtn");
+
+  function setPill(text) { pill.textContent = text; }
+
+  function setupPush() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPill("Push not supported in this browser");
+      subBtn.disabled = true; testBtn.disabled = true;
+      return;
+    }
+    navigator.serviceWorker.register("/service-worker.js").then(function (reg) {
+      reg.pushManager.getSubscription().then(function (sub) {
+        if (sub) { setPill("Push enabled on this device"); subBtn.textContent = "Push enabled"; subBtn.disabled = true; testBtn.disabled = false; }
+        else { setPill("Push not enabled yet"); testBtn.disabled = true; }
+      });
+    });
+  }
+
+  subBtn.addEventListener("click", function () {
+    navigator.serviceWorker.ready.then(function (reg) {
+      return api("/api/vapid-public-key").then(function (r) {
+        return reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(r.publicKey)
+        });
+      });
+    }).then(function (sub) {
+      return api("/api/subscribe", { method: "POST", body: JSON.stringify(sub) });
+    }).then(function () {
+      setPill("Push enabled on this device");
+      subBtn.textContent = "Push enabled"; subBtn.disabled = true; testBtn.disabled = false;
+    }).catch(function (e) {
+      setPill("Couldn't enable push: " + e.message);
+    });
+  });
+
+  testBtn.addEventListener("click", function () {
+    api("/api/test-push", { method: "POST" }).then(function (r) {
+      setPill("Test sent (delivered: " + r.sent + ")");
+      loadHistory();
+    }).catch(function (e) { setPill("Test failed: " + e.message); });
+  });
+
+  // ---------- items ----------
+  function loadItems() {
+    api("/api/items").then(function (r) { renderRows(r.items || []); });
+  }
+  function loadHistory() {
+    api("/api/history").then(function (r) { renderHistory(r.history || []); });
+  }
+
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; });
+  }
+
+  function renderRows(items) {
+    var rows = document.getElementById("rows");
+    if (!items.length) { rows.innerHTML = '<div style="padding:20px 16px; color:var(--muted); font-size:13.5px;">No dispatches yet — add one below.</div>'; return; }
+    var todayKey = (function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); })();
+    rows.innerHTML = items.slice().sort(function(a,b){return a.time<b.time?-1:1;}).map(function (item) {
+      var sent = item.lastFiredKey === todayKey || (item.repeat === "once" && item.firedOnce);
+      var repeatTxt = item.repeat === "custom" ? (item.days||[]).map(function(d){return DAY_NAMES[d];}).join(" ") : REPEAT_LABEL[item.repeat];
+      return '<div class="row">' +
+        '<div class="time mono">' + escapeHtml(item.time) + '</div>' +
+        '<div class="repeat">' + repeatTxt + '</div>' +
+        '<div><div class="msg-title">' + escapeHtml(item.title) + '</div>' + (item.body ? '<div class="msg-body">' + escapeHtml(item.body) + '</div>' : '') + '</div>' +
+        '<div class="badge ' + (sent ? "sent" : "armed") + '">' + (sent ? "SENT" : "ARMED") + '</div>' +
+        '<div class="row-actions">' +
+          '<button class="icon-btn" data-edit="' + item.id + '">✎</button>' +
+          '<button class="icon-btn" data-del="' + item.id + '">✕</button>' +
+        '</div></div>';
+    }).join("");
+    rows.querySelectorAll("[data-edit]").forEach(function (b) {
+      b.addEventListener("click", function () { openForm(items.find(function(i){return i.id===b.dataset.edit;})); });
+    });
+    rows.querySelectorAll("[data-del]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        if (b.dataset.confirm) { api("/api/items/" + b.dataset.del, { method: "DELETE" }).then(loadItems); }
+        else { b.dataset.confirm = "1"; b.textContent = "✓"; setTimeout(function(){ delete b.dataset.confirm; b.textContent="✕"; }, 3000); }
+      });
+    });
+  }
+
+  function renderHistory(history) {
+    var box = document.getElementById("historyRows");
+    if (!history.length) { box.innerHTML = '<div style="padding:8px 0; color:var(--muted); font-size:13px;">Nothing delivered yet.</div>'; return; }
+    box.innerHTML = history.map(function (h) {
+      var d = new Date(h.at);
+      return '<div class="history-row"><div class="mono" style="color:var(--accent); font-weight:600; width:52px;">' +
+        String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0") + '</div><div>' + escapeHtml(h.title) + '</div></div>';
+    }).join("");
+  }
+
+  // ---------- form ----------
+  function wireForm() {
+    document.getElementById("addBtn").addEventListener("click", function () { openForm(null); });
+    document.getElementById("cancelBtn").addEventListener("click", closeForm);
+    document.getElementById("f_repeat").addEventListener("change", toggleCustom);
+    document.getElementById("f_days").addEventListener("click", function (e) {
+      if (!e.target.classList.contains("day-toggle")) return;
+      var d = parseInt(e.target.dataset.day, 10);
+      var idx = customDays.indexOf(d);
+      if (idx === -1) customDays.push(d); else customDays.splice(idx, 1);
+      updateDayToggles();
+    });
+    document.getElementById("saveBtn").addEventListener("click", function () {
+      var title = document.getElementById("f_title").value.trim();
+      if (!title) return;
+      var repeat = document.getElementById("f_repeat").value;
+      var payload = {
+        id: editingId,
+        time: document.getElementById("f_time").value || "09:00",
+        repeat: repeat,
+        days: repeat === "custom" ? customDays.slice() : [],
+        title: title,
+        body: document.getElementById("f_body").value.trim(),
+        enabled: true
+      };
+      api("/api/items", { method: "POST", body: JSON.stringify(payload) }).then(function () {
+        loadItems(); closeForm();
+      });
+    });
+  }
+  function toggleCustom() {
+    var show = document.getElementById("f_repeat").value === "custom";
+    document.getElementById("f_days").hidden = !show;
+    document.getElementById("f_days_label").hidden = !show;
+  }
+  function updateDayToggles() {
+    document.querySelectorAll(".day-toggle").forEach(function (b) {
+      b.classList.toggle("active", customDays.indexOf(parseInt(b.dataset.day,10)) !== -1);
+    });
+  }
+  function openForm(item) {
+    editingId = item ? item.id : null;
+    document.getElementById("f_time").value = item ? item.time : "09:00";
+    document.getElementById("f_repeat").value = item ? item.repeat : "daily";
+    document.getElementById("f_title").value = item ? item.title : "";
+    document.getElementById("f_body").value = item ? (item.body||"") : "";
+    customDays = item ? (item.days||[]).slice() : [];
+    updateDayToggles(); toggleCustom();
+    document.getElementById("formRow").hidden = false;
+    document.getElementById("addFoot").hidden = true;
+  }
+  function closeForm() {
+    editingId = null;
+    document.getElementById("formRow").hidden = true;
+    document.getElementById("addFoot").hidden = false;
+  }
+})();
+</script>
+</body>
+</html>

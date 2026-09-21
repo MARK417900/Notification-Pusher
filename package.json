@@ -1,0 +1,17 @@
+{
+  "name": "dispatch-push",
+  "version": "1.0.0",
+  "description": "Scheduled browser push notifications that work even when your browser is closed.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "gen-vapid": "node scripts/gen-vapid.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "web-push": "^3.6.7",
+    "dotenv": "^16.4.5"
+  }
+}
